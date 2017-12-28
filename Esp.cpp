@@ -16,9 +16,6 @@ Request::~Request() {
 	delete _headers;
 	delete _params;
 }
-
-
-
 Esp::Esp(HardwareSerial &print,SoftwareSerial &esp,void (*loopFun)(void),String serverName=DEFAULT_SERVER) {
 	printer = &print;
 	_esp = &esp;
@@ -26,20 +23,24 @@ Esp::Esp(HardwareSerial &print,SoftwareSerial &esp,void (*loopFun)(void),String 
 	_serverName = serverName;
 	
 }
-void Esp::runInMainLoop(void (*requestHandler)(char*)) {
+void Esp::runInMainLoop(void (*requestHandler)(char*,int)) {
     if(isAvailable()) {
+	int connectionId = _esp->read()-48;
 	char* valueFromESP = readFromEspOnSerial(D_MEDIUM);
     	printer->println(valueFromESP);
     	if(isRequest(valueFromESP)) {
-		requestHandler(valueFromESP);
-    	}
+		processingRequest = true;
+		requestHandler(readFromEspOnSerial(D_MEDIUM),connectionId);
+	}
+	
     }
+    processingRequest=false;
 	
 }
 void Esp::autoReconnectIfLost(String sid,String pass,String ip,int httpPort) {
-    if((checkTime+CHECK_CONNECTION_DELAY) < millis()) {
+    if(!isAvailable() && (checkTime+CHECK_CONNECTION_DELAY) < millis()) {
     	if(!isConnected()) {
-		printer->println("NOT CONNECTED.... Reconnecting.....");
+		printer->println("Reconnecting...");
 		delay(D_MEDIUM);
 		connectAndStartServer(sid,pass,ip,httpPort);
     	}
@@ -47,30 +48,27 @@ void Esp::autoReconnectIfLost(String sid,String pass,String ip,int httpPort) {
     }
 }
 boolean Esp::connectAndStartServer(String sid,String pass,String ip,int httpPort) {
-  printer->println("STARTING ESP8266 MODULE");
-  printer->println("");
-  printer->println("---------- TESTING MODULE -----------");
+  printer->println("-- START --");
   if(check()) {
-    printer->println("ESP MODULE IS WORKING");  
+    printer->println("ESP OK");  
   } else {
-    printer->print("Sorry ESP MODULE IS NOT WORKING");
+    printer->print("ESP ERROR");
     return false;
   }
-  printer->println("----------- RESET MODULE ---------------");
+  printer->println("-- RESET --");
   reset();
   
-  printer->println("----------- SET MODE STATION ---------------");
+  printer->println("-- STATION MODE --");
   setMode(STATION);
 
-  printer->println("----------- CONNECT TO WIFI ---------------");
+  printer->println("-- CONNECTING --");
   connect(sid,pass);
   setIp(ip);
 
-  printer->println("----------- CHECK IP ---------------");
   String responseIp = getIp();
   printer->println("Connect to  "+responseIp);
 
-  printer->println("----------- START HTTP SERVER ---------------");
+  printer->println("-- START SERVER --");
   checkTime = millis();
   return startServer(httpPort);
 }
@@ -112,17 +110,17 @@ boolean Esp::startServer(int port) {
 	return  checkIfContains(writeOnEsp(C_SERVER,String(ENABLE)+","+String(port),SET,D_MEDIUM),R_OK);
 }
 
-boolean Esp::writeToClient(String data) {
-	writeOnEsp(C_SEND_DATA,String(DISABLE)+","+String(data.length()),SET,D_SHORT);
+boolean Esp::writeToClient(String data,int connectionId) {
+	writeOnEsp(C_SEND_DATA,String(connectionId)+","+String(data.length()),SET,D_SHORT);
 	return checkIfContains(writeOnEspAndGetResponse(data,D_SHORT),R_OK);
 }
-boolean Esp::writeHeadersToClient() {
-	writeToClient(String(HTTP_OK_STATUS)+NEW_LINE);
-        writeToClient(String(H_SERVER)+String(_serverName)+NEW_LINE);
-       	writeToClient(NEW_LINE);
+boolean Esp::writeHeadersToClient(int connectionId) {
+	writeToClient(String(HTTP_OK_STATUS)+NEW_LINE,connectionId);
+        writeToClient(String(H_SERVER)+String(_serverName)+NEW_LINE,connectionId);
+       	writeToClient(NEW_LINE,connectionId);
 }
-boolean Esp::closeClientConnection() {
-	return  checkIfContains(writeOnEsp(C_CLOSE,String(DISABLE),SET,D_SHORT),R_OK);
+boolean Esp::closeClientConnection(int connectionId) {
+	return  checkIfContains(writeOnEsp(C_CLOSE,String(connectionId),SET,D_SHORT),R_OK);
 }
 char*  Esp::writeOnEsp(String command,int delayValue) {
 	return writeOnEsp(command,"",INFO,delayValue);  
@@ -206,6 +204,7 @@ KeyValue* Esp::parseValues(int size,String text, String keyValueDivider,String n
 
 	return result;
 }
+
 boolean Esp::checkIfContains(char* value,char* test) {
    int l = strlen(test);
     for (int i=0,n=strlen(value); i<n; i++)  {
@@ -233,7 +232,7 @@ char* Esp::readFromEspOnSerial(int delayValue){
         while(_esp->available())
         {
             char c = _esp->read(); 
-            if (tempPos < 500) { reply[tempPos] = c; tempPos++;   }
+            if (tempPos < BUFFER) { reply[tempPos] = c; tempPos++;   }
         }
         reply[tempPos] = 0;
     } 

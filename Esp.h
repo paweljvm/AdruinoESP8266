@@ -35,7 +35,7 @@
 #define NEW_LINE "\n"
 #define END_LINE "\r\n"
 #define SLASH "/"
-#define D_SHORT 30
+#define D_SHORT 300
 #define D_LONG 10000
 #define D_MEDIUM 2000
 #define REQUEST_PREFIX "+IPD"
@@ -83,21 +83,23 @@ class Esp {
 	String getIp();
 	boolean startServer(int port);
 	boolean isAvailable();
-	boolean writeToClient(String data);
-	boolean writeHeadersToClient();
+	boolean writeToClient(String data,int connectionId);
+	boolean writeHeadersToClient(int connectionId);
 	char* readFromEspOnSerial(int delayValue);
-	boolean closeClientConnection();
+	boolean closeClientConnection(int connectionId);
 	boolean isRequest(char* value);
 	boolean connectAndStartServer(String sid,String pass,String ip,int httpPort);
-	void runInMainLoop(void (*requestHandler)(char*));
+	void runInMainLoop(void (*requestHandler)(char*,int));
 	void autoReconnectIfLost(String sid,String pass,String ip,int httpPort);
 	boolean isConnected();
 	Request parseRequestBody(char* requestBody);
 	String Esp::getUri(char* requestBody);
+	boolean checkIfContains(char* value,char* test);
 	private:
 	HardwareSerial *printer;
 	SoftwareSerial *_esp;
 	String _serverName;
+	boolean processingRequest;
 	unsigned long checkTime;
 	void (*_loopFun) (void);
 	char* writeOnEsp(String command,int delayValue);
@@ -108,7 +110,6 @@ class Esp {
 	boolean nullOrEmpty(String string);
 	char* writeOnEspAndGetResponse(String str,int delayValue);
 	boolean checkIfResponseIsOk();
-	boolean checkIfContains(char* value,char* test);
 	void clearBuffer(char* buffer);
 	String wrapInQuotes(String value);
 	KeyValue* parseParams(String uri);
